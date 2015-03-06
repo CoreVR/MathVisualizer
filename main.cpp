@@ -15,6 +15,7 @@
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #include <OVR_CAPI_GL.h>
+#include "Kernel/OVR_Math.h"
 #include <stdio.h>
 #include <iostream>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "graphicsmath.h"
 
 using namespace std;
+using namespace OVR;
 
 float Player::winHeight=0.0f;
 float Player::winWidth=0.0f;
@@ -209,20 +211,20 @@ int main()
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_LEQUAL);
 
-	GLuint FBO=0;
-	glGenFramebuffers(1 &FBO);
-	glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 
-	GLuint renderTexture;
-	glGenTextures(1, &renderTexture);
-	glBindTexture(GL_TEXTURE_2D, renderTexture);
-	glTexImage2d(GL_TEXTURE_2D, 0, GL_REB, 1920,1080, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	
+
+
+
+	GLuint FBO=0;
+	glGenFramebuffers(1, &FBO);
+	glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+	GLuint renderBuffer=0;
+	glGenRenderbuffers(1, &renderBuffer);
+
 
 	//oculus stuff
 	// Configure Stereo settings.
+
 	Sizei recommenedTex0Size = ovrHmd_GetFovTextureSize(hmd, ovrEye_Left,
 	hmd->DefaultEyeFov[0], 1.0f);
 	Sizei recommenedTex1Size = ovrHmd_GetFovTextureSize(hmd, ovrEye_Right,
@@ -231,13 +233,64 @@ int main()
 	renderTargetSize.w = recommenedTex0Size.w + recommenedTex1Size.w;
 	renderTargetSize.h = max ( recommenedTex0Size.h, recommenedTex1Size.h );
 	const int eyeRenderMultisample = 1;
-	pRendertargetTexture = pRender->CreateTexture(
-	Texture_RGBA | Texture_RenderTarget | eyeRenderMultisample,
-	renderTargetSize.w, renderTargetSize.h, NULL);
+	GLuint renderTexture;
+	glGenTextures(1, &renderTexture);
+	glBindTexture(GL_TEXTURE_2D, renderTexture);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, renderTargetSize.w,renderTargetSize.h, 0, GL_RGB, GL_UNSIGNED_BYTE, 0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, renderTexture,0);
 
-	// The actual RT size may be different due to HW limits.
-	renderTargetSize.w = pRendertargetTexture->GetWidth();
-	renderTargetSize.h = pRendertargetTexture->GetHeight();
+	glBindRenderbuffer(GL_RENDERBUFFER, renderBuffer);
+	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, renderTargetSize.w, renderTargetSize.h);
+	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, renderBuffer);
+
+
+	ovrFovPort eyeFov[2]={hmd->DefaultEyeFov[0], hmd->DefaultEyeFov[1]};
+
+	ovrRecti eyeRenderViewport[2];
+	eyeRenderViewport[0].Pos=Vector2i(0,0);
+	eyeRenderViewport[0].Size=Sizei(renderTargetSize.w/2, renderTargetSize.h);
+	eyeRenderViewport[1].Pos=Vector2i(renderTargetSize.w+1/2,0);
+	eyeRenderViewport[1].Size=eyeRenderViewport[0].Size;
+
+	ovrGLTexture eyeTexture[2];
+	eyeTexture[0].OGL.Header.API=ovrRenderAPI_OpenGL;
+	eyeTexture[0].OGL.Header.TextureSize=renderTargetSize;
+	eyeTexture[0].OGL.Header.RenderViewport=eyeRenderViewport[0];
+	eyeTexture[0].OGL.TexId=renderTexture;
+
+	eyeTexture[1]=eyeTexture[0];
+	eyeTexture[1].OGL.Header.RenderViewport=eyeRenderViewport[1];
+
+	//glfw stuff to set up ovr renderer
+	int gwidth, gheight;
+    union ovrGLConfig config;
+    glfwGetFramebufferSize(window, &gwidth, &gheight);
+    config.OGL.Header.BackBufferSize.w = gwidth;
+    config.OGL.Header.BackBufferSize.h = gheight;
+    config.OGL.Header.API=ovrRenderAPI_OpenGL;
+    config.OGL.Header.TextureSize=Sizei(hmd->Resolution.w, hmd->Resolution.h);
+    config.OGL.Header.Multisample=1;
+	#if defined(_WIN32)
+		if(!(hmd->HmdCaps & ovrHmdCap_ExtendedDesktop))
+			ovrHmd_AttachToWindow(hmd, glfwGetWin32Window(window), NULL, NULL);
+    	config.OGL.Window = glfwGetWin32Window(window);
+   		config.OGL.DC=NULL;
+	#elif defined(__APPLE__)
+	#elif defined(__linux__)
+    	config.OGL.Disp = glfwGetX11Display();
+    	config.OGL.Win=glfwGetX11Window(window);
+	#endif
+
+    ovrEyeRenderDesc eyeRenderDesc[2];
+    ovrHmd_ConfigureRendering(hmd, &config.Config, ovrDistortionCap_Chromatic|ovrDistortionCap_Vignette|ovrDistortionCap_TimeWarp|ovrDistortionCap_Overdrive, eyeFov, eyeRenderDesc);
+
+    ovrHmd_SetEnabledCaps(hmd, ovrHmdCap_LowPersistence|ovrHmdCap_DynamicPrediction);
+
+    ovrHmd_ConfigureTracking(hmd, ovrTrackingCap_Orientation|ovrTrackingCap_MagYawCorrection|ovrTrackingCap_Postition,0);
+
+
 
 
 	Player player(window);

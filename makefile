@@ -5,4 +5,4 @@ LINK=$(shell pkg-config --cflags glfw3) -lGLEW $(shell pkg-config --static --lib
 COMP_SETTINGS=-std=c++11
 
 all:
-	$(COMPILER) -g -o MATHVRT $(SRC) $(INCLUDE) $(LINK) $(COMP_SETTINGS) -I./ovr_sdk_linux_0.4.4/LibOVR/Src -L./ovr_sdk_linux_0.4.4/LibOVR/Lib/Linux/Release/x86_64 -lovr
+	$(COMPILER) -g -o MATHVRT $(SRC) $(INCLUDE) $(LINK) $(COMP_SETTINGS) -I../ovr_sdk_linux_0.4.4/LibOVR/Src -I../ovr_sdk_linux_0.4.4/LibOVR/Src/Kernel -L../ovr_sdk_linux_0.4.4/LibOVR/Lib/Linux/Release/x86_64 -lovr
