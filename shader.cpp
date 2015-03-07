@@ -50,11 +50,25 @@ Shader::Shader(std::string sourceDirectory)
 	glAttachShader(shaderProgram, vertexShader);
 	glAttachShader(shaderProgram, fragmentShader);
 	glLinkProgram(shaderProgram);
+	glDeleteShader(vertexShader);
+	glDeleteShader(fragmentShader);
 
 	modelLocation=glGetUniformLocation(shaderProgram, "model");
 	viewLocation=glGetUniformLocation(shaderProgram, "view");
 	projectionLocation=glGetUniformLocation(shaderProgram, "proj");
+	mvpLocation=glGetUniformLocation(shaderProgram, "mvp");
 
+}
+
+void Shader::Delete()
+{
+	glDeleteProgram(shaderProgram);
+}
+
+void Shader::SetMVPMatrix(OVR::Matrix4f mvp)
+{
+	glUseProgram(shaderProgram);
+	glUniformMatrix4fv(mvpLocation, 1, GL_FALSE, &mvp.Transposed().M[0][0]);
 }
 
 void Shader::SetViewMatrix(mat4 view)

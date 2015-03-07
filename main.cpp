@@ -148,11 +148,16 @@ int main()
 
 	//ovr
 	ovr_Initialize();
+
 	//ovrHmd hmd=ovrHmd_Create(0);
 	float fov;
 	//if(hmd==NULL)
 	//{
 	ovrHmd hmd=ovrHmd_CreateDebug(ovrHmd_DK2);
+	if(hmd==NULL)
+	{
+		return 1;
+	}
 	//}else
 	//{
 	//	ovrHmd_ConfigureTracking(hmd, ovrTrackingCap_Orientation|ovrTrackingCap_MagYawCorrection|ovrTrackingCap_Position, 0);
@@ -196,7 +201,7 @@ int main()
 	//glfwWindowHint(GLFW_BLUE_BITS, mode->blueBits);
 	//glfwWindowHint(GLFW_REFRESH_RATE, mode->refreshRate);
 	
-	GLFWwindow* window=glfwCreateWindow(640,480,"Function Visualizer", hmdMonitor, NULL);
+	GLFWwindow* window=glfwCreateWindow(640,480,"Function Visualizer", NULL, NULL);
 	if(window==NULL)
 	{
 		fputs("ERROR: could not create GLFW window\n", stderr);
@@ -222,6 +227,7 @@ int main()
 	glGenRenderbuffers(1, &renderBuffer);
 
 
+
 	//oculus stuff
 	// Configure Stereo settings.
 
@@ -233,6 +239,7 @@ int main()
 	renderTargetSize.w = recommenedTex0Size.w + recommenedTex1Size.w;
 	renderTargetSize.h = max ( recommenedTex0Size.h, recommenedTex1Size.h );
 	const int eyeRenderMultisample = 1;
+	
 	GLuint renderTexture;
 	glGenTextures(1, &renderTexture);
 	glBindTexture(GL_TEXTURE_2D, renderTexture);
@@ -263,6 +270,8 @@ int main()
 	eyeTexture[1]=eyeTexture[0];
 	eyeTexture[1].OGL.Header.RenderViewport=eyeRenderViewport[1];
 
+//works up to here
+
 	//glfw stuff to set up ovr renderer
 	int gwidth, gheight;
     union ovrGLConfig config;
@@ -270,25 +279,29 @@ int main()
     config.OGL.Header.BackBufferSize.w = gwidth;
     config.OGL.Header.BackBufferSize.h = gheight;
     config.OGL.Header.API=ovrRenderAPI_OpenGL;
-    config.OGL.Header.TextureSize=Sizei(hmd->Resolution.w, hmd->Resolution.h);
+    //config.OGL.Header.BackBufferSize=Sizei(hmd->Resolution.w, hmd->Resolution.h);
     config.OGL.Header.Multisample=1;
-	#if defined(_WIN32)
-		if(!(hmd->HmdCaps & ovrHmdCap_ExtendedDesktop))
-			ovrHmd_AttachToWindow(hmd, glfwGetWin32Window(window), NULL, NULL);
-    	config.OGL.Window = glfwGetWin32Window(window);
-   		config.OGL.DC=NULL;
-	#elif defined(__APPLE__)
-	#elif defined(__linux__)
-    	config.OGL.Disp = glfwGetX11Display();
-    	config.OGL.Win=glfwGetX11Window(window);
-	#endif
+	//#if defined(_WIN32)
+	//	if(!(hmd->HmdCaps & ovrHmdCap_ExtendedDesktop))
+	//		ovrHmd_AttachToWindow(hmd, glfwGetWin32Window(window), NULL, NULL);
+    //	config.OGL.Window = glfwGetWin32Window(window);
+   	//	config.OGL.DC=NULL;
+	//#elif defined(__APPLE__)
+	//#elif defined(__linux__)
+   	config.OGL.Disp = glfwGetX11Display();
+	//#endif
+
 
     ovrEyeRenderDesc eyeRenderDesc[2];
-    ovrHmd_ConfigureRendering(hmd, &config.Config, ovrDistortionCap_Chromatic|ovrDistortionCap_Vignette|ovrDistortionCap_TimeWarp|ovrDistortionCap_Overdrive, eyeFov, eyeRenderDesc);
 
-    ovrHmd_SetEnabledCaps(hmd, ovrHmdCap_LowPersistence|ovrHmdCap_DynamicPrediction);
+    ovrBool result=ovrHmd_ConfigureRendering(hmd, &config.Config, ovrDistortionCap_Chromatic|ovrDistortionCap_TimeWarp, eyeFov, eyeRenderDesc);
+    //if(!result)
+    //{
+   // 	return 1;
+    //}
+   	ovrHmd_SetEnabledCaps(hmd, ovrHmdCap_LowPersistence|ovrHmdCap_DynamicPrediction);
 
-    ovrHmd_ConfigureTracking(hmd, ovrTrackingCap_Orientation|ovrTrackingCap_MagYawCorrection|ovrTrackingCap_Postition,0);
+    ovrHmd_ConfigureTracking(hmd, ovrTrackingCap_Orientation|ovrTrackingCap_MagYawCorrection|ovrTrackingCap_Position,0);
 
 
 
@@ -373,13 +386,35 @@ int main()
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 
-
+	ovrHmd_DismissHSWDisplay(hmd);
 
 	while(!glfwWindowShouldClose(window))
 	{
-
+		ovrFrameTiming frameTiming=ovrHmd_BeginFrame(hmd,0);
+		glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 		glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
+		ovrPosef eyeRenderPose[2];
+		for(int eyeIndex=0; eyeIndex<ovrEye_Count; eyeIndex++)
+		{
+			ovrEyeType eye=hmd->EyeRenderOrder[eyeIndex];
+			ovrVector3f hmdToEyeViewOffset[2];
+			hmdToEyeViewOffset[0]=eyeRenderDesc[0].HmdToEyeViewOffset;
+			hmdToEyeViewOffset[1]=eyeRenderDesc[1].HmdToEyeViewOffset;
+			ovrHmd_GetEyePoses(hmd, 0, hmdToEyeViewOffset, eyeRenderPose, NULL);
+
+			OVR::Matrix4f MVPMatrix=OVR::Matrix4f(ovrMatrix4f_Projection(eyeRenderDesc[eye].Fov,0.01f, 1000.0f, true))*
+									OVR::Matrix4f::Translation(eyeRenderDesc[eye].HmdToEyeViewOffset)*
+									OVR::Matrix4f(OVR::Quatf(eyeRenderPose[eye].Orientation).Inverted());
+
+	
+			shader.SetMVPMatrix(MVPMatrix);
+
+			glViewport(eyeRenderViewport[eye].Pos.x, eyeRenderViewport[eye].Pos.y,
+				       eyeRenderViewport[eye].Size.w, eyeRenderViewport[eye].Size.h);
+
+			
+		}
 		glLineWidth(3);
 		glBindVertexArray(gVAO);
 		glDrawArrays(GL_LINES, 0, 6);
@@ -401,8 +436,8 @@ int main()
 		{
 
 			QuatToMat4(player.camera.rotation.m, player.camera.quaternion);
-
 			player.camera.position=player.camera.position+vec3(player.camera.forward)*-player.moveVector.v[2];
+
 			player.camera.position=player.camera.position+vec3(player.camera.up)*player.moveVector.v[1];
 			player.camera.position=player.camera.position+vec3(player.camera.right)*player.moveVector.v[0];
 			player.moveVector=vec3(0.0,0.0,0.0);
@@ -410,6 +445,7 @@ int main()
 
 			player.camera.viewMat=inverse(player.camera.rotation)*inverse(T);
 
+		
 			//print(player.camera.position);
 			shader.SetViewMatrix(player.camera.viewMat);
 
@@ -418,13 +454,25 @@ int main()
 			player.camera.pitch=0.0f;
 			player.camera.roll=0.0f;
 		}
-		glfwSwapBuffers(window);
+		ovrHmd_EndFrame(hmd, eyeRenderPose, &eyeTexture[0].Texture);
 	}
+	shader.Delete();
+	
+	glDeleteVertexArrays(1, &VAO);
+	glDeleteBuffers(2, VBO);
+
+	glDeleteVertexArrays(1, &gVAO);
+	glDeleteBuffers(2, gVBO);
+	glDeleteBuffers(1, &IBO);
+
+	glDeleteFramebuffers(1, &FBO);
+	glDeleteTextures(1, &renderTexture);
+	glDeleteRenderbuffers(1, &renderBuffer);
 
 	glfwDestroyWindow(window);
 	glfwTerminate();
 
-	ovrHmd_Destroy(hmd);
+//	ovrHmd_Destroy(hmd);
 	ovr_Shutdown();
 
 	return 0;
